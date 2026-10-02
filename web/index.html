@@ -1,0 +1,1025 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Apex Intake Logic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: compliance console — sectioned KYC intake on the left, sticky live assessment on the right, engine source and session queue below. */
+:root {
+  --bg: #f3f6f7; --surface: #ffffff; --sunken: #e9eef0; --ink: #142029; --muted: #5a6b76; --line: #d3dde2;
+  --accent: #0d5c74; --accent-soft: #dcecf1;
+  --ok: #1d7a4c; --ok-bg: #e2f3ea; --warn: #8a5a00; --warn-bg: #fbf0d6; --bad: #b3261e; --bad-bg: #fbe5e3;
+  --code-key: #0d5c74; --code-str: #7a4a00; --code-num: #6b3fa0; --code-lit: #b3261e;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f171c; --surface: #16212a; --sunken: #1c2a34; --ink: #e3ecf0; --muted: #91a4b0; --line: #2a3a45;
+    --accent: #5fb4cf; --accent-soft: #17323d;
+    --ok: #5fcf96; --ok-bg: #153325; --warn: #e8b64f; --warn-bg: #3a2d10; --bad: #f08a83; --bad-bg: #3d1a18;
+    --code-key: #7cc4dc; --code-str: #e8b64f; --code-num: #c1a1f0; --code-lit: #f08a83;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f171c; --surface: #16212a; --sunken: #1c2a34; --ink: #e3ecf0; --muted: #91a4b0; --line: #2a3a45;
+  --accent: #5fb4cf; --accent-soft: #17323d;
+  --ok: #5fcf96; --ok-bg: #153325; --warn: #e8b64f; --warn-bg: #3a2d10; --bad: #f08a83; --bad-bg: #3d1a18;
+  --code-key: #7cc4dc; --code-str: #e8b64f; --code-num: #c1a1f0; --code-lit: #f08a83;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 48px; display: grid; gap: 24px; }
+
+header { display: grid; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px; }
+h1 { font-family: var(--display); font-weight: 600; font-size: clamp(26px, 4vw, 36px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.lede { color: var(--muted); margin: 8px 0 0; max-width: 72ch; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.presets span { font-size: 13px; color: var(--muted); }
+
+button { font: inherit; cursor: pointer; }
+.chip-btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
+.chip-btn:hover { border-color: var(--accent); color: var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, pre:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 24px; align-items: start; }
+.sticky { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); }
+@media (max-width: 920px) { .grid { grid-template-columns: minmax(0, 1fr); } .sticky { position: static; } }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px; display: grid; gap: 16px; min-width: 0; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 19px; margin: 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sub { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+
+fieldset { border: 0; border-top: 1px solid var(--line); margin: 0; padding: 16px 0 0; display: grid; gap: 14px; min-width: 0; }
+fieldset:first-of-type { border-top: 0; padding-top: 0; }
+legend { font-family: var(--display); font-weight: 600; font-size: 16px; padding: 0; display: flex; gap: 10px; align-items: baseline; }
+legend .req-ref { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--muted); letter-spacing: .04em; }
+
+.field { display: grid; gap: 6px; min-width: 0; }
+label, .label { font-size: 13px; font-weight: 600; }
+.req { color: var(--bad); }
+input[type="text"], input[type="date"], input[type="number"], select, textarea { width: 100%; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; }
+textarea { resize: vertical; min-height: 64px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 560px) { .row2, .row3 { grid-template-columns: 1fr; } }
+
+.vol-readout { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 500; }
+.vol-readout small { font-size: 12px; color: var(--muted); margin-left: 6px; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.scale { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.scale .mark { color: var(--accent); }
+
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { text-align: center; padding: 9px 8px; font-weight: 500; cursor: pointer; background: var(--bg); border-left: 1px solid var(--line); font-size: 13.5px; }
+.seg label:first-of-type { border-left: 0; }
+.seg input:checked + label { background: var(--accent); color: var(--surface); }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (max-width: 560px) { .seg { grid-auto-flow: row; } .seg label { border-left: 0; border-top: 1px solid var(--line); } .seg label:first-of-type { border-top: 0; } }
+
+.sub-box { background: var(--sunken); border-radius: 6px; padding: 14px; display: grid; gap: 12px; }
+.rule-box { border-radius: 6px; padding: 12px 14px; display: grid; gap: 10px; border: 1px solid transparent; }
+.rule-box.warn { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.rule-box.ok { background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+.rule-title { font-weight: 600; font-size: 14px; }
+.warn .rule-title { color: var(--warn); }
+.ok .rule-title { color: var(--ok); }
+.hint { font-size: 12px; color: var(--muted); }
+.hint.good { color: var(--ok); } .hint.badtxt { color: var(--bad); }
+
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; font-weight: 500; }
+.check input { margin-top: 3px; accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+
+.owner { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.6fr) 84px minmax(0, 1.4fr) 34px; gap: 8px; align-items: end; }
+.owner .field label { font-size: 12px; }
+.owner .rm { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 6px; height: 40px; }
+.owner .rm:hover { color: var(--bad); border-color: var(--bad); }
+@media (max-width: 720px) { .owner { grid-template-columns: 1fr 1fr; } .owner .rm { grid-column: 2; justify-self: end; width: 40px; } }
+.add { border: 1px dashed var(--accent); background: transparent; color: var(--accent); border-radius: 6px; padding: 8px 12px; font-size: 13px; font-weight: 600; justify-self: start; }
+.add:disabled { opacity: .4; cursor: not-allowed; }
+
+.primary { background: var(--accent); color: var(--surface); border: 0; border-radius: 6px; padding: 12px 16px; font-weight: 600; width: 100%; }
+.primary:hover { filter: brightness(1.08); }
+.errors { background: var(--bad-bg); color: var(--bad); border-radius: 6px; padding: 10px 14px; font-size: 14px; }
+.errors ul { margin: 6px 0 0; padding-left: 18px; }
+.success { background: var(--ok-bg); color: var(--ok); border-radius: 6px; padding: 10px 14px; margin: 0; font-size: 14px; }
+
+.status { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 600; }
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.status.pending { background: var(--warn-bg); color: var(--warn); }
+.status.stp { background: var(--ok-bg); color: var(--ok); }
+.status.blocked { background: var(--bad-bg); color: var(--bad); }
+.risk { font-family: var(--mono); font-size: 12px; font-weight: 500; border-radius: 4px; padding: 3px 8px; border: 1px solid currentColor; }
+.risk.LOW { color: var(--ok); } .risk.MEDIUM { color: var(--warn); } .risk.HIGH { color: var(--bad); }
+.status-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+.flags { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.flags li { display: grid; gap: 2px; border-left: 3px solid var(--bad); background: var(--bad-bg); padding: 8px 12px; border-radius: 0 6px 6px 0; }
+.flags li.credit { border-left-color: var(--warn); background: var(--warn-bg); }
+.flags li.tag { border-left-color: var(--accent); background: var(--accent-soft); }
+.flags li.clear { border-left-color: var(--ok); background: var(--ok-bg); }
+.flags code { font-family: var(--mono); font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.flags li code { color: var(--bad); } .flags li.credit code { color: var(--warn); } .flags li.tag code { color: var(--accent); }
+.flags span { font-size: 13px; }
+
+.checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.checklist li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; font-size: 13.5px; align-items: start; }
+.checklist .mk { font-family: var(--mono); font-weight: 600; text-align: center; border-radius: 4px; line-height: 20px; height: 20px; font-size: 12px; }
+.checklist .done .mk { background: var(--ok-bg); color: var(--ok); }
+.checklist .todo .mk { background: var(--sunken); color: var(--muted); }
+.checklist .todo { color: var(--muted); }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-weight: 600; color: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.prio { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 4px; background: var(--sunken); white-space: nowrap; }
+.prio.EXECUTIVE, .prio.BLOCKING, .prio.HOLD { background: var(--bad-bg); color: var(--bad); }
+.prio.ENHANCED { background: var(--warn-bg); color: var(--warn); }
+.prio.NOTIFY_ONLY { color: var(--muted); }
+
+pre { margin: 0; background: var(--sunken); border-radius: 6px; padding: 14px; overflow: auto; font-family: var(--mono); font-size: 12px; line-height: 1.55; max-height: 380px; }
+.k { color: var(--code-key); } .s { color: var(--code-str); } .n { color: var(--code-num); } .l { color: var(--code-lit); }
+.copy { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 6px; padding: 5px 10px; font-size: 12px; }
+details > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+
+.engine { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 920px) { .engine { grid-template-columns: minmax(0, 1fr); } }
+.queue-empty { color: var(--muted); font-size: 14px; margin: 0; }
+footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; display: grid; gap: 4px; }
+@media (prefers-reduced-motion: no-preference) { .flags li { animation: in .18s ease-out; } @keyframes in { from { transform: translateX(-4px); opacity: .4; } } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Apex Global Liquidity Solutions · KYC intake POC</p>
+      <h1>Institutional FX onboarding, mapped to FINTRAC client identification</h1>
+      <p class="lede">Entity existence, signatory identity verification, beneficial ownership, PEP and third-party determinations all run through one JavaScript rules engine on every change. The assessment on the right updates as you edit.</p>
+    </div>
+    <div class="presets" role="group" aria-label="Load a sample client">
+      <span>Sample clients:</span>
+      <button class="chip-btn" type="button" data-preset="0">Canadian corp · low risk</button>
+      <button class="chip-btn" type="button" data-preset="1">Cayman fund · foreign PEP</button>
+      <button class="chip-btn" type="button" data-preset="2">Small client · credit line</button>
+      <button class="chip-btn" type="button" data-preset="3">UK LP · no 25% owner</button>
+      <button class="chip-btn" type="button" data-preset="4">Offshore trust</button>
+      <button class="chip-btn" type="button" data-preset="5">Sanctions match</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <form class="panel" id="intake" novalidate>
+      <div class="panel-head"><h2>Client intake</h2><p class="sub" id="presetNote">Example data loaded</p></div>
+
+      <fieldset>
+        <legend>1 · Entity <span class="req-ref">confirm existence</span></legend>
+        <div class="field">
+          <label for="legalName">Legal entity name <span class="req">*</span></label>
+          <input type="text" id="legalName" autocomplete="off">
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="structureType">Entity structure</label>
+            <select id="structureType"><option>Corporation</option><option>Hedge Fund</option><option>LP</option><option>Offshore Trust</option></select>
+          </div>
+          <div class="field">
+            <label for="jurisdiction">Jurisdiction of incorporation</label>
+            <select id="jurisdiction"><option>Canada</option><option>United States</option><option>United Kingdom</option><option>Cayman Islands</option><option>Panama</option></select>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="registrationNumber">Registration / incorporation no. <span class="req">*</span></label>
+            <input type="text" id="registrationNumber" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="existenceDocument">Existence confirmed by <span class="req">*</span></label>
+            <select id="existenceDocument">
+              <option value="">Choose a document</option>
+              <option>Certificate of incorporation</option><option>Certificate of status</option>
+              <option>Annual filing / registry record</option><option>Partnership agreement</option><option>Trust deed</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="principalBusiness">Nature of principal business <span class="req">*</span></label>
+          <input type="text" id="principalBusiness" autocomplete="off">
+        </div>
+        <div class="field" id="directorsField">
+          <label for="directors">Names of all directors <span class="req">*</span></label>
+          <input type="text" id="directors" autocomplete="off" placeholder="Separate names with commas">
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>2 · Relationship <span class="req-ref">purpose and intended nature</span></legend>
+        <div class="field">
+          <label for="purpose">Purpose of the relationship <span class="req">*</span></label>
+          <select id="purpose">
+            <option value="">Choose a purpose</option>
+            <option>Hedging commercial FX exposure</option><option>Cross-border supplier payments</option>
+            <option>Investment portfolio FX</option><option>Treasury management</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="fxVolume">Estimated annual FX volume</label>
+          <div class="vol-readout" id="volReadout" aria-live="polite"></div>
+          <input type="range" id="fxVolume" min="500000" max="50000000" step="100000">
+          <div class="scale"><span>$500K</span><span class="mark">$10M enterprise line</span><span>$50M</span></div>
+        </div>
+        <div class="field">
+          <span class="label" id="settleLabel">Preferred settlement structure</span>
+          <div class="seg" role="radiogroup" aria-labelledby="settleLabel">
+            <input type="radio" name="settlement" id="setPre" value="Pre-Funded"><label for="setPre">Pre-Funded</label>
+            <input type="radio" name="settlement" id="setCredit" value="Post-Trade Credit Line"><label for="setCredit">Post-Trade Credit Line</label>
+          </div>
+        </div>
+        <div class="rule-box ok" id="entBox" hidden>
+          <div class="rule-title">Enterprise threshold met</div>
+          <div class="field">
+            <label for="lei">Legal Entity Identifier (LEI) <span class="req">*</span></label>
+            <input type="text" id="lei" maxlength="20" autocomplete="off" placeholder="20-character ISO 17442 code">
+            <div class="hint" id="leiHint"></div>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>3 · Signatory identity <span class="req-ref">person signing the service agreement</span></legend>
+        <div class="row2">
+          <div class="field"><label for="sigName">Full name <span class="req">*</span></label><input type="text" id="sigName" autocomplete="off"></div>
+          <div class="field"><label for="sigDob">Date of birth <span class="req">*</span></label><input type="date" id="sigDob"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label for="sigAddress">Address <span class="req">*</span></label><input type="text" id="sigAddress" autocomplete="off"></div>
+          <div class="field"><label for="sigOccupation">Occupation <span class="req">*</span></label><input type="text" id="sigOccupation" autocomplete="off"></div>
+        </div>
+        <div class="field">
+          <label for="sigPep">PEP / HIO determination</label>
+          <select id="sigPep" class="pep-select"></select>
+        </div>
+        <div class="field">
+          <span class="label" id="idMethodLabel">Identity verification method</span>
+          <div class="seg" role="radiogroup" aria-labelledby="idMethodLabel">
+            <input type="radio" name="idMethod" id="idPhoto" value="Government-issued photo ID"><label for="idPhoto">Photo ID</label>
+            <input type="radio" name="idMethod" id="idCredit" value="Credit file"><label for="idCredit">Credit file</label>
+            <input type="radio" name="idMethod" id="idDual" value="Dual-process"><label for="idDual">Dual-process</label>
+          </div>
+        </div>
+        <div class="sub-box" id="photoBox">
+          <div class="row2">
+            <div class="field"><label for="docType">Document type</label>
+              <select id="docType"><option value="">Choose</option><option>Passport</option><option>Driver's licence</option><option>Provincial photo ID card</option><option>Permanent resident card</option></select></div>
+            <div class="field"><label for="docNumber">Document number</label><input type="text" id="docNumber" autocomplete="off"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label for="docJurisdiction">Issuing jurisdiction</label><input type="text" id="docJurisdiction" autocomplete="off"></div>
+            <div class="field"><label for="docExpiry">Expiry date</label><input type="date" id="docExpiry"><div class="hint" id="expiryHint"></div></div>
+          </div>
+          <label class="check"><input type="checkbox" id="authCheck"> Document authenticity and liveness check passed <span class="hint">(simulated IDV vendor result)</span></label>
+        </div>
+        <div class="sub-box" id="creditBox" hidden>
+          <div class="row2">
+            <div class="field"><label for="bureauName">Canadian credit bureau</label>
+              <select id="bureauName"><option value="">Choose</option><option>Equifax Canada</option><option>TransUnion Canada</option></select></div>
+            <div class="field"><label for="creditFileRef">Credit file reference</label><input type="text" id="creditFileRef" autocomplete="off"></div>
+          </div>
+          <p class="hint">The file must have existed for at least 3 years and match name, address and date of birth.</p>
+        </div>
+        <div class="sub-box" id="dualBox" hidden>
+          <div class="row2">
+            <div class="field"><label for="sourceOne">Source one</label><input type="text" id="sourceOne" autocomplete="off" placeholder="e.g. Bank statement (RBC)"></div>
+            <div class="field"><label for="sourceTwo">Source two</label><input type="text" id="sourceTwo" autocomplete="off" placeholder="e.g. Utility bill (Hydro One)"></div>
+          </div>
+          <p class="hint">Two different reliable sources, each confirming name plus address, date of birth or a financial account.</p>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>4 · Beneficial ownership <span class="req-ref">25% ownership or control</span></legend>
+        <div class="field">
+          <label for="boOutcome">Outcome <span class="req">*</span></label>
+          <select id="boOutcome">
+            <option value="">Choose an outcome</option>
+            <option>Owners identified and confirmed</option>
+            <option>No individual holds 25% or more</option>
+            <option>Unable to obtain or confirm</option>
+          </select>
+        </div>
+        <div id="ownersBox" class="field">
+          <span class="label">Individuals owning or controlling 25% or more</span>
+          <div id="owners" style="display:grid;gap:10px"></div>
+          <button class="add" type="button" id="addOwner">+ Add owner</button>
+          <p class="hint">Rows under 25% are not kept in the payload.</p>
+        </div>
+        <div id="trustBox" class="sub-box" hidden>
+          <div class="field"><label for="trustees">Trustees (names and addresses)</label><textarea id="trustees" placeholder="One per line"></textarea></div>
+          <div class="field"><label for="settlors">Settlors</label><textarea id="settlors" placeholder="One per line"></textarea></div>
+          <div class="field"><label for="beneficiaries">Known beneficiaries</label><textarea id="beneficiaries" placeholder="One per line"></textarea></div>
+        </div>
+        <div class="field" id="confirmField">
+          <label for="boConfirmationMethod">Confirmed by (different from how it was collected)</label>
+          <select id="boConfirmationMethod">
+            <option value="">Choose a method</option>
+            <option>Corporate registry search</option><option>Shareholder register and minute book review</option>
+            <option>Partnership agreement review</option><option>Trust deed review</option>
+            <option>Signed client attestation with supporting documents</option>
+          </select>
+        </div>
+        <div class="field" id="controlField" hidden>
+          <label for="controlPersonName">Verified CEO, or person performing that function <span class="req">*</span></label>
+          <input type="text" id="controlPersonName" autocomplete="off">
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>5 · Third-party determination</legend>
+        <label class="check"><input type="checkbox" id="thirdParty"> The client is acting on behalf of a third party</label>
+        <div class="row2" id="thirdPartyBox" hidden>
+          <div class="field"><label for="thirdPartyName">Third party name <span class="req">*</span></label><input type="text" id="thirdPartyName" autocomplete="off"></div>
+          <div class="field"><label for="thirdPartyRelationship">Relationship to client <span class="req">*</span></label><input type="text" id="thirdPartyRelationship" autocomplete="off"></div>
+        </div>
+      </fieldset>
+
+      <div class="rule-box warn" id="eddBox" hidden>
+        <div class="rule-title">High risk: enhanced due diligence required</div>
+        <div class="field">
+          <label for="sourceOfWealth">Source of funds and source of wealth <span class="req">*</span></label>
+          <textarea id="sourceOfWealth" placeholder="Where the money for these trades comes from, and how the owners built their wealth"></textarea>
+        </div>
+        <p class="hint">Senior management approval is required before the relationship goes live.</p>
+      </div>
+
+      <button class="primary" type="submit">Submit for onboarding</button>
+      <div id="feedback" aria-live="polite"></div>
+    </form>
+
+    <section class="panel sticky" aria-label="Live assessment">
+      <div class="panel-head"><h2>Live assessment</h2><span class="sub" id="asOfNote"></span></div>
+      <div class="status-row"><span class="status" id="status"></span><span class="risk" id="risk"></span></div>
+
+      <div style="display:grid;gap:8px"><p class="sub">Flags and tags</p><ul class="flags" id="flags"></ul></div>
+
+      <div style="display:grid;gap:8px"><p class="sub">FINTRAC client identification checklist</p><ul class="checklist" id="checklist"></ul></div>
+
+      <div style="display:grid;gap:8px">
+        <p class="sub">Webhook routing</p>
+        <div class="table-wrap"><table><thead><tr><th>Target</th><th>Priority</th></tr></thead><tbody id="hooks"></tbody></table></div>
+      </div>
+
+      <details>
+        <summary>Payload</summary>
+        <div style="display:grid;gap:8px;margin-top:10px">
+          <button class="copy" type="button" id="copyBtn" style="justify-self:start">Copy JSON</button>
+          <pre id="payload" tabindex="0"></pre>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <section class="panel" aria-label="Rules engine source">
+    <div class="panel-head"><h2>The logic behind it</h2><p class="sub">Printed from the running code</p></div>
+    <p class="hint" style="font-size:14px;max-width:78ch">These are the functions running this page, the same ones in rules-engine.js. Flags decide which team reviews a file. Status resolves in a fixed order: a sanctions match blocks, compliance review comes before credit, and only a file with no flags goes straight through.</p>
+    <div class="engine">
+      <div style="display:grid;gap:8px;min-width:0"><p class="sub">Flagging</p><pre id="srcFlags" tabindex="0"></pre></div>
+      <div style="display:grid;gap:8px;min-width:0"><p class="sub">Risk rating and status</p><pre id="srcStatus" tabindex="0"></pre></div>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="Submitted files">
+    <div class="panel-head"><h2>Submitted this session</h2><p class="sub" id="queueCount">0 files</p></div>
+    <div id="queue"><p class="queue-empty">Submit the form to log a file here. Entries clear when you reload the page.</p></div>
+  </section>
+
+  <footer>
+    <span>Independent concept demo built for a job application. Apex Global Liquidity Solutions and all people shown are fictional, and sanctions screening uses a made-up demo list. Not affiliated with or endorsed by Feathery or any other company.</span>
+    <span>Maps onboarding data to FINTRAC client identification requirements for money services businesses. An intake form alone does not make a firm FINTRAC compliant; that also takes a compliance officer, policies, a risk assessment, training and ongoing monitoring.</span>
+  </footer>
+</div>
+
+<script>
+// ===== Rules engine: injected verbatim from rules-engine.js =====
+/**
+ * Apex onboarding rules engine (v2) — JavaScript
+ * ==============================================
+ *
+ * Business rules for onboarding an institutional FX client, aligned with
+ * FINTRAC's know-your-client requirements for money services businesses:
+ *
+ *   - Confirm the entity exists (registration number + source document)
+ *   - Verify the identity of the person signing for the entity (IDV)
+ *   - Obtain and confirm beneficial ownership (individuals owning or
+ *     controlling 25%+; trustees, settlors and beneficiaries for trusts)
+ *   - PEP / HIO determination, third-party determination
+ *   - Purpose and intended nature of the business relationship
+ *   - Enhanced measures for high-risk clients, 5-year record retention
+ *
+ * This file only applies rules to data. A real compliance program also needs
+ * a compliance officer, written policies, a risk assessment, training and an
+ * effectiveness review. See the README notes in the chat for scope.
+ *
+ * Run it:   node rules-engine.js
+ *
+ * Python → JavaScript cheat sheet for this file
+ *   def name(x):            →  function name(x) { ... }
+ *   my_list = []            →  const myList = [];
+ *   x in some_set           →  someSet.has(x)
+ *   value if cond else alt  →  cond ? value : alt
+ *   f"Hi {name}"            →  `Hi ${name}`
+ *   None                    →  null
+ *   dict {"a": 1}           →  object { a: 1 }
+ */
+
+// ---------------------------------------------------------------------------
+// Configuration. In production these would live in a config table owned by
+// compliance, so thresholds and lists change without a code release.
+// ---------------------------------------------------------------------------
+
+const SCHEMA_VERSION = "2.0.0";
+
+const EDD_JURISDICTIONS = new Set(["Cayman Islands", "Panama"]);
+const ENTERPRISE_THRESHOLD = 10_000_000; // CAD
+const BO_THRESHOLD_PCT = 25; // FINTRAC: individuals owning or controlling 25%+
+const SETTLEMENT_CREDIT = "Post-Trade Credit Line";
+const LEI_PATTERN = /^[A-Z0-9]{18}[0-9]{2}$/; // ISO 17442
+
+// Fictional names standing in for a real sanctions-list screening vendor.
+const DEMO_WATCHLIST = new Set(["viktor ironhold", "meridian shell holdings ltd."]);
+
+const ID_METHODS = {
+  PHOTO_ID: "Government-issued photo ID",
+  CREDIT_FILE: "Credit file",
+  DUAL_PROCESS: "Dual-process",
+};
+
+const BO_OUTCOMES = {
+  CONFIRMED: "Owners identified and confirmed",
+  NONE_OVER_THRESHOLD: "No individual holds 25% or more",
+  UNABLE: "Unable to obtain or confirm",
+};
+
+const PEP_STATUSES = {
+  NONE: "Not a PEP or HIO",
+  DOMESTIC: "Domestic PEP",
+  HIO: "Head of an international organization",
+  DOMESTIC_ASSOCIATE: "Family / close associate of a domestic PEP or HIO",
+  FOREIGN: "Foreign PEP",
+  FOREIGN_ASSOCIATE: "Family / close associate of a foreign PEP",
+};
+const FOREIGN_PEP_VALUES = new Set([PEP_STATUSES.FOREIGN, PEP_STATUSES.FOREIGN_ASSOCIATE]);
+const REVIEW_PEP_VALUES = new Set([PEP_STATUSES.DOMESTIC, PEP_STATUSES.HIO, PEP_STATUSES.DOMESTIC_ASSOCIATE]);
+
+// Flags block straight-through approval and say which queue reviews them.
+const FLAGS = {
+  SANCTIONS: { code: "RISK_FLAG_SANCTIONS_MATCH", queue: "BLOCK",
+    note: "A screened name matches the watchlist. Onboarding is frozen and escalated to the compliance officer." },
+  OFFSHORE: { code: "RISK_FLAG_OFFSHORE_JURISDICTION", queue: "COMPLIANCE",
+    note: "Higher-risk jurisdiction. Enhanced due diligence applies." },
+  FOREIGN_PEP: { code: "RISK_FLAG_FOREIGN_PEP", queue: "COMPLIANCE",
+    note: "Foreign PEP or associate. Always high risk: source of funds and wealth, plus senior management approval." },
+  PEP_REVIEW: { code: "RISK_FLAG_PEP_HIO_REVIEW", queue: "COMPLIANCE",
+    note: "Domestic PEP, HIO or associate. Compliance decides on risk whether enhanced measures apply." },
+  BO_UNCONFIRMED: { code: "RISK_FLAG_BO_UNCONFIRMED", queue: "COMPLIANCE",
+    note: "Beneficial ownership could not be obtained or confirmed. CEO identity verified instead; client treated as high risk." },
+  THIRD_PARTY: { code: "RISK_FLAG_THIRD_PARTY", queue: "COMPLIANCE",
+    note: "Client is acting on behalf of a third party, whose details are recorded." },
+  CREDIT_EXEC: { code: "CREDIT_RISK_FLAG_EXECUTIVE_DESK_REVIEW", queue: "CREDIT",
+    note: "Credit line at enterprise volume. Executive credit desk underwrites the exposure." },
+  CREDIT: { code: "CREDIT_RISK_FLAG_DESK_REVIEW", queue: "CREDIT",
+    note: "Credit line requested. Credit desk underwrites the exposure before approval." },
+};
+
+// Tags are informational. They never block approval.
+const TAGS = {
+  LEI: { code: "DATA_LEI_CAPTURED", note: "Enterprise volume. LEI validated and passed to the CRM." },
+  BO_DISCREPANCY: { code: "TASK_BO_DISCREPANCY_CHECK",
+    note: "High-risk Canadian corporation. Compare owners with the Corporations Canada registry; report material discrepancies within 30 days." },
+};
+
+const STATUS = {
+  BLOCKED: "Blocked: Sanctions Escalation",
+  COMPLIANCE: "Pending Compliance Review",
+  CREDIT: "Pending Credit Underwriting",
+  STP: "Straight-Through Approved",
+};
+
+const WEBHOOK_BASE = "https://mock-api.apex-demo.internal/v1/webhooks";
+
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
+
+const clean = (value) => (value == null ? "" : String(value).trim());
+const splitNames = (text) => clean(text).split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+
+// Owners at or above the threshold with a name. Rows below 25% are dropped:
+// FINTRAC asks for 25%+ owners, and data minimization says keep nothing extra.
+function qualifyingOwners(owners) {
+  return (owners || [])
+    .map((o) => ({ name: clean(o.name), address: clean(o.address), ownershipPct: Number(o.ownershipPct) || 0, pepStatus: o.pepStatus || PEP_STATUSES.NONE }))
+    .filter((o) => o.name && o.ownershipPct >= BO_THRESHOLD_PCT);
+}
+
+function screenedNames(input) {
+  const names = [clean(input.legalName), clean(input.signatory?.name), clean(input.thirdPartyName), clean(input.controlPersonName)];
+  qualifyingOwners(input.owners).forEach((o) => names.push(o.name));
+  if (input.structureType === "Offshore Trust") {
+    ["trustees", "settlors", "beneficiaries"].forEach((k) => names.push(...splitNames(input.trustParties?.[k])));
+  }
+  return names.filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// Rules: each is a pure function, so the same input always gives the same output.
+// ---------------------------------------------------------------------------
+
+function computeFlags(input) {
+  const isTrust = input.structureType === "Offshore Trust";
+  const owners = isTrust ? [] : qualifyingOwners(input.owners);
+  const pepStatuses = [input.signatory?.pepStatus, ...owners.map((o) => o.pepStatus)];
+  const names = screenedNames(input).map((n) => n.toLowerCase());
+
+  const flags = [];
+  if (names.some((n) => DEMO_WATCHLIST.has(n))) flags.push(FLAGS.SANCTIONS.code);
+  if (EDD_JURISDICTIONS.has(input.jurisdiction)) flags.push(FLAGS.OFFSHORE.code);
+  if (pepStatuses.some((s) => FOREIGN_PEP_VALUES.has(s))) flags.push(FLAGS.FOREIGN_PEP.code);
+  else if (pepStatuses.some((s) => REVIEW_PEP_VALUES.has(s))) flags.push(FLAGS.PEP_REVIEW.code);
+  if (input.boOutcome === BO_OUTCOMES.UNABLE) flags.push(FLAGS.BO_UNCONFIRMED.code);
+  if (input.actingForThirdParty) flags.push(FLAGS.THIRD_PARTY.code);
+
+  // Any credit line is credit exposure, so it always gets reviewed.
+  if (input.settlement === SETTLEMENT_CREDIT) {
+    flags.push(Number(input.fxVolume) >= ENTERPRISE_THRESHOLD ? FLAGS.CREDIT_EXEC.code : FLAGS.CREDIT.code);
+  }
+  return flags;
+}
+
+function computeRiskRating(input, flags) {
+  const high = [FLAGS.SANCTIONS.code, FLAGS.OFFSHORE.code, FLAGS.FOREIGN_PEP.code, FLAGS.BO_UNCONFIRMED.code];
+  if (flags.some((f) => high.includes(f))) return "HIGH";
+  if (flags.includes(FLAGS.PEP_REVIEW.code) || flags.includes(FLAGS.THIRD_PARTY.code) || input.structureType === "Offshore Trust") return "MEDIUM";
+  return "LOW";
+}
+
+function computeTags(input, riskRating) {
+  const tags = [];
+  if (Number(input.fxVolume) >= ENTERPRISE_THRESHOLD) tags.push(TAGS.LEI.code);
+  if (riskRating === "HIGH" && input.jurisdiction === "Canada" && input.structureType === "Corporation") tags.push(TAGS.BO_DISCREPANCY.code);
+  return tags;
+}
+
+function resolveStatus(flags) {
+  const queueOf = (code) => Object.values(FLAGS).find((f) => f.code === code).queue;
+  const queues = new Set(flags.map(queueOf));
+  if (queues.has("BLOCK")) return STATUS.BLOCKED;
+  if (queues.has("COMPLIANCE")) return STATUS.COMPLIANCE;
+  if (queues.has("CREDIT")) return STATUS.CREDIT;
+  return STATUS.STP;
+}
+
+function resolveWebhooks(input, flags, riskRating) {
+  let kycPriority = riskRating === "HIGH" ? "ENHANCED" : "STANDARD";
+  if (flags.includes(FLAGS.SANCTIONS.code)) kycPriority = "BLOCKING";
+
+  let creditPriority = "NOTIFY_ONLY";
+  if (flags.includes(FLAGS.CREDIT_EXEC.code)) creditPriority = "EXECUTIVE";
+  else if (flags.includes(FLAGS.CREDIT.code)) creditPriority = "STANDARD";
+
+  return [
+    { target: "CORE_CRM_SALESFORCE", endpoint: `${WEBHOOK_BASE}/salesforce/account-upsert`,
+      priority: flags.includes(FLAGS.SANCTIONS.code) ? "HOLD" : "STANDARD" },
+    { target: "KYC_AML_VERIFICATION", endpoint: `${WEBHOOK_BASE}/kyc-aml/screen`, priority: kycPriority },
+    { target: "CREDIT_RISK_DESK", endpoint: `${WEBHOOK_BASE}/credit-risk/review`, priority: creditPriority },
+  ];
+}
+
+// Only the record fields FINTRAC asks for under the chosen method are kept.
+function buildIdentityVerification(sig) {
+  const method = sig.idMethod;
+  if (method === ID_METHODS.PHOTO_ID) {
+    return { method, document_type: clean(sig.docType) || null, document_number: clean(sig.docNumber) || null,
+      issuing_jurisdiction: clean(sig.docJurisdiction) || null, expiry_date: clean(sig.docExpiry) || null,
+      authenticity_and_liveness_check: Boolean(sig.authenticityCheckPassed) };
+  }
+  if (method === ID_METHODS.CREDIT_FILE) {
+    return { method, credit_bureau: clean(sig.bureauName) || null, credit_file_reference: clean(sig.creditFileRef) || null };
+  }
+  if (method === ID_METHODS.DUAL_PROCESS) {
+    return { method, source_one: clean(sig.sourceOne) || null, source_two: clean(sig.sourceTwo) || null };
+  }
+  return { method: null };
+}
+
+/**
+ * Compile raw form answers into the canonical payload.
+ * `asOf` is today's date as YYYY-MM-DD. Passing it in (instead of reading the
+ * clock inside) keeps the function testable.
+ */
+function buildPayload(input, asOf) {
+  const sig = input.signatory || {};
+  const isTrust = input.structureType === "Offshore Trust";
+  const volume = Number(input.fxVolume) || 0;
+  const enterprise = volume >= ENTERPRISE_THRESHOLD;
+  const flags = computeFlags(input);
+  const riskRating = computeRiskRating(input, flags);
+  const tags = computeTags(input, riskRating);
+  const needsControlPerson = input.boOutcome === BO_OUTCOMES.UNABLE || input.boOutcome === BO_OUTCOMES.NONE_OVER_THRESHOLD;
+
+  return {
+    schema_version: SCHEMA_VERSION,
+    assessed_on: asOf,
+    entity: {
+      legal_name: clean(input.legalName) || null,
+      structure_type: input.structureType,
+      jurisdiction: input.jurisdiction,
+      principal_business: clean(input.principalBusiness) || null,
+      existence_verification: {
+        document_type: input.existenceDocument || null,
+        registration_number: clean(input.registrationNumber) || null,
+      },
+      directors: input.structureType === "Corporation" ? splitNames(input.directors) : [],
+      lei: enterprise ? clean(input.lei).toUpperCase() || null : null,
+    },
+    relationship: {
+      purpose: input.purpose || null,
+      estimated_annual_fx_volume_cad: volume,
+      currency: "CAD",
+      volume_tier: enterprise ? "ENTERPRISE" : "STANDARD",
+      settlement_structure: input.settlement,
+    },
+    signatory: {
+      name: clean(sig.name) || null,
+      date_of_birth: clean(sig.dateOfBirth) || null,
+      address: clean(sig.address) || null,
+      occupation: clean(sig.occupation) || null,
+      pep_status: sig.pepStatus || PEP_STATUSES.NONE,
+      identity_verification: buildIdentityVerification(sig),
+    },
+    beneficial_ownership: {
+      threshold_pct: BO_THRESHOLD_PCT,
+      outcome: input.boOutcome || null,
+      owners: isTrust ? [] : qualifyingOwners(input.owners).map((o) => ({
+        name: o.name, address: o.address || null, ownership_pct: o.ownershipPct, pep_status: o.pepStatus })),
+      trust_parties: isTrust ? {
+        trustees: splitNames(input.trustParties?.trustees),
+        settlors: splitNames(input.trustParties?.settlors),
+        beneficiaries: splitNames(input.trustParties?.beneficiaries),
+      } : null,
+      confirmation_method: input.boOutcome === BO_OUTCOMES.UNABLE ? null : input.boConfirmationMethod || null,
+      control_person_verified: needsControlPerson ? clean(input.controlPersonName) || null : null,
+    },
+    third_party: input.actingForThirdParty
+      ? { acting_for_third_party: true, name: clean(input.thirdPartyName) || null, relationship: clean(input.thirdPartyRelationship) || null }
+      : { acting_for_third_party: false },
+    compliance: {
+      risk_rating: riskRating,
+      enhanced_due_diligence: riskRating === "HIGH",
+      senior_management_approval_required: riskRating === "HIGH",
+      source_of_funds_and_wealth: riskRating === "HIGH" ? clean(input.sourceOfWealth) || null : null,
+      sanctions_screening: {
+        list: "DEMO_WATCHLIST",
+        names_screened: screenedNames(input).length,
+        match: flags.includes(FLAGS.SANCTIONS.code),
+      },
+    },
+    routing: {
+      flags,
+      tags,
+      workflow_status: resolveStatus(flags),
+      webhooks: resolveWebhooks(input, flags, riskRating),
+    },
+    record_keeping: {
+      regime: "PCMLTFA / FINTRAC (money services business)",
+      retention: "At least 5 years after the last transaction or the end of the relationship",
+    },
+  };
+}
+
+function validatePayload(payload, asOf) {
+  const errors = [];
+  const { entity, relationship, signatory, beneficial_ownership: bo, third_party: tp, compliance } = payload;
+  const idv = signatory.identity_verification;
+
+  // Entity existence and relationship
+  if (!entity.legal_name) errors.push("Legal entity name is required.");
+  if (!entity.existence_verification.registration_number) errors.push("Registration or incorporation number is required.");
+  if (!entity.existence_verification.document_type) errors.push("Choose the document used to confirm the entity exists.");
+  if (!entity.principal_business) errors.push("Describe the nature of the entity's principal business.");
+  if (entity.structure_type === "Corporation" && entity.directors.length === 0) errors.push("List the names of all directors.");
+  if (!relationship.purpose) errors.push("Choose the purpose of the business relationship.");
+  if (relationship.volume_tier === "ENTERPRISE") {
+    if (!entity.lei) errors.push("LEI is mandatory for enterprise-volume accounts.");
+    else if (!LEI_PATTERN.test(entity.lei)) errors.push("LEI must be 20 characters: 18 letters or digits, then 2 check digits.");
+  }
+
+  // Signatory identity verification
+  if (!signatory.name || !signatory.date_of_birth || !signatory.address || !signatory.occupation) {
+    errors.push("Signatory name, date of birth, address and occupation are all required.");
+  }
+  if (!idv.method) errors.push("Choose how the signatory's identity was verified.");
+  if (idv.method === ID_METHODS.PHOTO_ID) {
+    if (!idv.document_type || !idv.document_number || !idv.issuing_jurisdiction || !idv.expiry_date) {
+      errors.push("Photo ID needs document type, number, issuing jurisdiction and expiry date.");
+    } else if (idv.expiry_date < asOf) {
+      errors.push("The photo ID has expired. FINTRAC requires a valid, current document.");
+    }
+    if (!idv.authenticity_and_liveness_check) errors.push("The document authenticity and liveness check has not passed.");
+  }
+  if (idv.method === ID_METHODS.CREDIT_FILE && (!idv.credit_bureau || !idv.credit_file_reference)) {
+    errors.push("Credit file method needs the Canadian credit bureau and the file reference.");
+  }
+  if (idv.method === ID_METHODS.DUAL_PROCESS) {
+    if (!idv.source_one || !idv.source_two) errors.push("Dual-process needs two reliable sources.");
+    else if (idv.source_one.toLowerCase() === idv.source_two.toLowerCase()) errors.push("Dual-process sources must be two different sources.");
+  }
+
+  // Beneficial ownership
+  const isTrust = entity.structure_type === "Offshore Trust";
+  if (!bo.outcome) errors.push("Record the beneficial ownership outcome.");
+  if (bo.outcome === BO_OUTCOMES.CONFIRMED) {
+    if (isTrust) {
+      const t = bo.trust_parties;
+      if (!t.trustees.length || !t.settlors.length || !t.beneficiaries.length) errors.push("List all trustees, settlors and known beneficiaries.");
+    } else {
+      if (bo.owners.length === 0) errors.push(`Add every individual owning or controlling ${BO_THRESHOLD_PCT}% or more.`);
+      if (bo.owners.some((o) => !o.address)) errors.push("Each beneficial owner needs an address.");
+      if (bo.owners.reduce((sum, o) => sum + o.ownership_pct, 0) > 100) errors.push("Beneficial ownership adds up to more than 100%.");
+    }
+  }
+  if (bo.outcome === BO_OUTCOMES.NONE_OVER_THRESHOLD && isTrust) errors.push("Trusts must record trustees, settlors and beneficiaries, not a 25% outcome.");
+  if (bo.outcome && bo.outcome !== BO_OUTCOMES.UNABLE && !bo.confirmation_method) errors.push("Choose how beneficial ownership was confirmed.");
+  if ((bo.outcome === BO_OUTCOMES.UNABLE || bo.outcome === BO_OUTCOMES.NONE_OVER_THRESHOLD) && !bo.control_person_verified) {
+    errors.push("Name the verified CEO, or the person performing that function.");
+  }
+
+  // Third party and enhanced due diligence
+  if (tp.acting_for_third_party && (!tp.name || !tp.relationship)) errors.push("Record the third party's name and relationship to the client.");
+  if (compliance.enhanced_due_diligence && !compliance.source_of_funds_and_wealth) {
+    errors.push("High-risk client: describe the source of funds and source of wealth.");
+  }
+  return errors;
+}
+
+// ===== UI wiring =====
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtCad = (n) => "$" + Number(n).toLocaleString("en-CA");
+const todayIso = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const AS_OF = todayIso();
+const MAX_OWNERS = 6;
+const flagMeta = Object.fromEntries(Object.values(FLAGS).map((f) => [f.code, f]));
+const tagMeta = Object.fromEntries(Object.values(TAGS).map((t) => [t.code, t]));
+const pepOptions = Object.values(PEP_STATUSES).map((v) => `<option>${esc(v)}</option>`).join("");
+$("sigPep").innerHTML = pepOptions;
+
+const sigPhoto = (name, dob, address, occupation, extra = {}) => ({ name, dateOfBirth: dob, address, occupation, pepStatus: PEP_STATUSES.NONE,
+  idMethod: ID_METHODS.PHOTO_ID, docType: "Passport", docNumber: "HK482193", docJurisdiction: "Canada", docExpiry: "2031-04-30", authenticityCheckPassed: true, ...extra });
+
+const PRESETS = [
+  { legalName: "Maple Ridge Capital Corp.", structureType: "Corporation", jurisdiction: "Canada", registrationNumber: "1234567-8",
+    existenceDocument: "Certificate of incorporation", principalBusiness: "Agricultural commodity exporter", directors: "Dana Whitfield, Omar Haddad",
+    fxVolume: 2500000, settlement: "Pre-Funded", purpose: "Hedging commercial FX exposure",
+    signatory: sigPhoto("Dana Whitfield", "1979-06-14", "220 Bay St, Toronto ON", "Chief Financial Officer", { docType: "Driver's licence", docJurisdiction: "Ontario" }),
+    owners: [{ name: "Dana Whitfield", address: "220 Bay St, Toronto ON", ownershipPct: 60, pepStatus: PEP_STATUSES.NONE }],
+    boOutcome: BO_OUTCOMES.CONFIRMED, boConfirmationMethod: "Corporate registry search" },
+  { legalName: "Tidewater Global Macro Fund", structureType: "Hedge Fund", jurisdiction: "Cayman Islands", registrationNumber: "MC-339201",
+    existenceDocument: "Certificate of incorporation", principalBusiness: "Global macro investment fund", fxVolume: 18000000, settlement: "Post-Trade Credit Line",
+    purpose: "Investment portfolio FX", lei: "5493001KJTIIGC8Y1R12",
+    signatory: sigPhoto("Elena Marsh", "1984-02-03", "1 Harbour Dr, George Town", "Chief Operating Officer", { docJurisdiction: "United Kingdom", docNumber: "551203984" }),
+    owners: [{ name: "Rafael Quintero", address: "Av. Balboa 12, Panama City", ownershipPct: 40, pepStatus: PEP_STATUSES.FOREIGN },
+             { name: "Elena Marsh", address: "1 Harbour Dr, George Town", ownershipPct: 30, pepStatus: PEP_STATUSES.NONE }],
+    boOutcome: BO_OUTCOMES.CONFIRMED, boConfirmationMethod: "Shareholder register and minute book review",
+    sourceOfWealth: "Institutional LP commitments; audited fund statements FY2025. Principal owner's wealth from prior private equity career." },
+  { legalName: "Lakeshore Imports Inc.", structureType: "Corporation", jurisdiction: "Canada", registrationNumber: "7788123-4",
+    existenceDocument: "Certificate of status", principalBusiness: "Consumer electronics importer", directors: "Priya Natarajan",
+    fxVolume: 1200000, settlement: "Post-Trade Credit Line", purpose: "Cross-border supplier payments",
+    signatory: { name: "Priya Natarajan", dateOfBirth: "1988-09-21", address: "45 Front St, Toronto ON", occupation: "President", pepStatus: PEP_STATUSES.NONE,
+      idMethod: ID_METHODS.CREDIT_FILE, bureauName: "Equifax Canada", creditFileRef: "EQ-20931-7741" },
+    owners: [{ name: "Priya Natarajan", address: "45 Front St, Toronto ON", ownershipPct: 100, pepStatus: PEP_STATUSES.NONE }],
+    boOutcome: BO_OUTCOMES.CONFIRMED, boConfirmationMethod: "Corporate registry search" },
+  { legalName: "Northgate Infrastructure Partners LP", structureType: "LP", jurisdiction: "United Kingdom", registrationNumber: "LP019284",
+    existenceDocument: "Partnership agreement", principalBusiness: "Infrastructure investment partnership", fxVolume: 12000000, settlement: "Pre-Funded",
+    purpose: "Investment portfolio FX", lei: "213800D1EI4B9WTWWD28",
+    signatory: { name: "James Okafor", dateOfBirth: "1975-11-30", address: "10 Gresham St, London", occupation: "Managing Partner", pepStatus: PEP_STATUSES.NONE,
+      idMethod: ID_METHODS.DUAL_PROCESS, sourceOne: "Bank statement (Barclays)", sourceTwo: "Utility bill (Thames Water)" },
+    owners: [], boOutcome: BO_OUTCOMES.NONE_OVER_THRESHOLD, boConfirmationMethod: "Partnership agreement review", controlPersonName: "James Okafor" },
+  { legalName: "Halcyon Family Trust", structureType: "Offshore Trust", jurisdiction: "Panama", registrationNumber: "PT-77120",
+    existenceDocument: "Trust deed", principalBusiness: "Private family wealth holding", fxVolume: 6500000, settlement: "Pre-Funded",
+    purpose: "Investment portfolio FX", actingForThirdParty: true, thirdPartyName: "Halcyon Holdings S.A.", thirdPartyRelationship: "Underlying asset owner",
+    signatory: sigPhoto("Marguerite Lavoie", "1966-03-12", "88 Rue Sherbrooke O, Montréal QC", "Professional trustee", { docJurisdiction: "Canada", pepStatus: PEP_STATUSES.DOMESTIC_ASSOCIATE }),
+    trustParties: { trustees: "Marguerite Lavoie, 88 Rue Sherbrooke O, Montréal QC", settlors: "Arthur Penhallow, Calle 50, Panama City", beneficiaries: "Clara Penhallow, Calle 50, Panama City\nJonah Penhallow, Calle 50, Panama City" },
+    owners: [], boOutcome: BO_OUTCOMES.CONFIRMED, boConfirmationMethod: "Trust deed review",
+    sourceOfWealth: "Settlor's proceeds from sale of a logistics company (2019), per sale agreement." },
+  { legalName: "Meridian Shell Holdings Ltd.", structureType: "Corporation", jurisdiction: "Panama", registrationNumber: "PA-55102",
+    existenceDocument: "Annual filing / registry record", principalBusiness: "Holding company", directors: "Viktor Ironhold",
+    fxVolume: 3000000, settlement: "Pre-Funded", purpose: "Treasury management",
+    signatory: sigPhoto("Viktor Ironhold", "1969-01-01", "Calle 50, Panama City", "Director", { docJurisdiction: "Panama", docNumber: "PA9920113" }),
+    owners: [{ name: "Viktor Ironhold", address: "Calle 50, Panama City", ownershipPct: 100, pepStatus: PEP_STATUSES.NONE }],
+    boOutcome: BO_OUTCOMES.CONFIRMED, boConfirmationMethod: "Signed client attestation with supporting documents",
+    sourceOfWealth: "Declared: proceeds from sale of a shipping business." },
+];
+
+function ownerRow(o = {}) {
+  const row = document.createElement("div");
+  row.className = "owner";
+  const n = $("owners").children.length + Math.random().toString(36).slice(2, 6);
+  row.innerHTML = `
+    <div class="field"><label for="on-${n}">Name</label><input type="text" id="on-${n}" class="o-name" autocomplete="off" value="${esc(o.name || "")}"></div>
+    <div class="field"><label for="oa-${n}">Address</label><input type="text" id="oa-${n}" class="o-address" autocomplete="off" value="${esc(o.address || "")}"></div>
+    <div class="field"><label for="op-${n}">Own %</label><input type="number" id="op-${n}" class="o-pct" min="0" max="100" step="1" value="${o.ownershipPct ?? ""}"></div>
+    <div class="field"><label for="oe-${n}">PEP / HIO</label><select id="oe-${n}" class="o-pep">${pepOptions}</select></div>
+    <button class="rm" type="button" aria-label="Remove owner">✕</button>`;
+  row.querySelector(".o-pep").value = o.pepStatus || PEP_STATUSES.NONE;
+  row.querySelector(".rm").addEventListener("click", () => { row.remove(); syncAddButton(); render(); });
+  return row;
+}
+function setOwners(list) { $("owners").replaceChildren(...list.map(ownerRow)); syncAddButton(); }
+function syncAddButton() { $("addOwner").disabled = $("owners").children.length >= MAX_OWNERS; }
+
+const radioVal = (name) => document.querySelector(`input[name="${name}"]:checked`)?.value || "";
+const setRadio = (name, value) => document.querySelectorAll(`input[name="${name}"]`).forEach((r) => (r.checked = r.value === value));
+
+function readForm() {
+  return {
+    legalName: $("legalName").value, structureType: $("structureType").value, jurisdiction: $("jurisdiction").value,
+    registrationNumber: $("registrationNumber").value, existenceDocument: $("existenceDocument").value,
+    principalBusiness: $("principalBusiness").value, directors: $("directors").value,
+    purpose: $("purpose").value, fxVolume: Number($("fxVolume").value), settlement: radioVal("settlement"), lei: $("lei").value,
+    signatory: {
+      name: $("sigName").value, dateOfBirth: $("sigDob").value, address: $("sigAddress").value, occupation: $("sigOccupation").value,
+      pepStatus: $("sigPep").value, idMethod: radioVal("idMethod"),
+      docType: $("docType").value, docNumber: $("docNumber").value, docJurisdiction: $("docJurisdiction").value, docExpiry: $("docExpiry").value,
+      authenticityCheckPassed: $("authCheck").checked, bureauName: $("bureauName").value, creditFileRef: $("creditFileRef").value,
+      sourceOne: $("sourceOne").value, sourceTwo: $("sourceTwo").value,
+    },
+    owners: [...$("owners").children].map((r) => ({ name: r.querySelector(".o-name").value, address: r.querySelector(".o-address").value,
+      ownershipPct: r.querySelector(".o-pct").value, pepStatus: r.querySelector(".o-pep").value })),
+    trustParties: { trustees: $("trustees").value, settlors: $("settlors").value, beneficiaries: $("beneficiaries").value },
+    boOutcome: $("boOutcome").value, boConfirmationMethod: $("boConfirmationMethod").value, controlPersonName: $("controlPersonName").value,
+    actingForThirdParty: $("thirdParty").checked, thirdPartyName: $("thirdPartyName").value, thirdPartyRelationship: $("thirdPartyRelationship").value,
+    sourceOfWealth: $("sourceOfWealth").value,
+  };
+}
+
+function loadPreset(p) {
+  const s = p.signatory;
+  const set = (id, v) => ($(id).value = v ?? "");
+  set("legalName", p.legalName); set("structureType", p.structureType); set("jurisdiction", p.jurisdiction);
+  set("registrationNumber", p.registrationNumber); set("existenceDocument", p.existenceDocument);
+  set("principalBusiness", p.principalBusiness); set("directors", p.directors); set("purpose", p.purpose);
+  set("fxVolume", p.fxVolume); setRadio("settlement", p.settlement); set("lei", p.lei);
+  set("sigName", s.name); set("sigDob", s.dateOfBirth); set("sigAddress", s.address); set("sigOccupation", s.occupation);
+  set("sigPep", s.pepStatus); setRadio("idMethod", s.idMethod);
+  set("docType", s.docType); set("docNumber", s.docNumber); set("docJurisdiction", s.docJurisdiction); set("docExpiry", s.docExpiry);
+  $("authCheck").checked = Boolean(s.authenticityCheckPassed);
+  set("bureauName", s.bureauName); set("creditFileRef", s.creditFileRef); set("sourceOne", s.sourceOne); set("sourceTwo", s.sourceTwo);
+  setOwners(p.owners || []);
+  const t = p.trustParties || {};
+  set("trustees", t.trustees); set("settlors", t.settlors); set("beneficiaries", t.beneficiaries);
+  set("boOutcome", p.boOutcome); set("boConfirmationMethod", p.boConfirmationMethod); set("controlPersonName", p.controlPersonName);
+  $("thirdParty").checked = Boolean(p.actingForThirdParty);
+  set("thirdPartyName", p.thirdPartyName); set("thirdPartyRelationship", p.thirdPartyRelationship);
+  set("sourceOfWealth", p.sourceOfWealth);
+  $("feedback").innerHTML = "";
+  $("presetNote").textContent = "Example: " + p.legalName;
+  render();
+}
+
+function highlightJson(obj) {
+  return esc(JSON.stringify(obj, null, 2)).replace(
+    /(&quot;(?:[^&]|&(?!quot;))*?&quot;)(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g,
+    (m, str, colon, lit, num) => {
+      if (str) return colon ? `<span class="k">${str}</span>${colon}` : `<span class="s">${str}</span>`;
+      if (lit) return `<span class="l">${lit}</span>`;
+      return `<span class="n">${num}</span>`;
+    });
+}
+
+// Each FINTRAC element is "done" when none of its validation errors fire.
+function checklist(payload, errors) {
+  const has = (...needles) => errors.some((e) => needles.some((n) => e.includes(n)));
+  const items = [
+    ["Entity existence confirmed (registration no. and source document)", !has("Legal entity name", "Registration", "document used to confirm", "principal business", "directors")],
+    ["Signatory identity verified (" + (payload.signatory.identity_verification.method || "no method") + ")", !has("Signatory", "identity was verified", "Photo ID", "photo ID", "authenticity", "Credit file", "Dual-process")],
+    ["Beneficial ownership obtained and confirmed", !has("beneficial ownership", "Beneficial ownership", "owning or controlling", "beneficial owner", "trustees", "Trusts must", "CEO")],
+    ["PEP / HIO determination recorded", true],
+    ["Third-party determination recorded", !has("third party")],
+    ["Purpose and intended nature of relationship recorded", !has("purpose")],
+    ["Sanctions screening run (" + payload.compliance.sanctions_screening.names_screened + " names)", true],
+  ];
+  if (payload.compliance.enhanced_due_diligence) items.push(["Enhanced due diligence: source of funds and wealth", !has("source of funds")]);
+  return items;
+}
+
+function render() {
+  const input = readForm();
+  const isTrust = input.structureType === "Offshore Trust";
+  const payload = buildPayload(input, AS_OF);
+  const errors = validatePayload(payload, AS_OF);
+  const { flags, tags, workflow_status, webhooks } = payload.routing;
+
+  // Conditional sections
+  $("directorsField").hidden = input.structureType !== "Corporation";
+  $("volReadout").innerHTML = `${fmtCad(input.fxVolume)}<small>CAD</small>`;
+  $("entBox").hidden = payload.relationship.volume_tier !== "ENTERPRISE";
+  $("photoBox").hidden = input.signatory.idMethod !== ID_METHODS.PHOTO_ID;
+  $("creditBox").hidden = input.signatory.idMethod !== ID_METHODS.CREDIT_FILE;
+  $("dualBox").hidden = input.signatory.idMethod !== ID_METHODS.DUAL_PROCESS;
+  $("ownersBox").hidden = isTrust || input.boOutcome !== BO_OUTCOMES.CONFIRMED;
+  $("trustBox").hidden = !isTrust || input.boOutcome === BO_OUTCOMES.UNABLE;
+  $("confirmField").hidden = input.boOutcome === BO_OUTCOMES.UNABLE;
+  $("controlField").hidden = !(input.boOutcome === BO_OUTCOMES.UNABLE || input.boOutcome === BO_OUTCOMES.NONE_OVER_THRESHOLD);
+  $("thirdPartyBox").hidden = !input.actingForThirdParty;
+  $("eddBox").hidden = !payload.compliance.enhanced_due_diligence;
+
+  // Inline hints
+  const lei = input.lei.trim().toUpperCase();
+  const leiHint = $("leiHint");
+  if (!lei) { leiHint.className = "hint"; leiHint.textContent = "18 letters or digits, then 2 check digits."; }
+  else if (LEI_PATTERN.test(lei)) { leiHint.className = "hint good"; leiHint.textContent = "Format valid."; }
+  else { leiHint.className = "hint badtxt"; leiHint.textContent = `${lei.length}/20 characters. Must end in 2 digits.`; }
+  const exp = input.signatory.docExpiry, expHint = $("expiryHint");
+  expHint.className = exp && exp < AS_OF ? "hint badtxt" : "hint";
+  expHint.textContent = exp && exp < AS_OF ? "Expired. Ask for a current document." : "";
+
+  // Status
+  const st = $("status");
+  st.textContent = workflow_status;
+  st.className = "status " + (workflow_status === STATUS.BLOCKED ? "blocked" : workflow_status === STATUS.STP ? "stp" : "pending");
+  const rk = $("risk");
+  rk.textContent = payload.compliance.risk_rating + " RISK";
+  rk.className = "risk " + payload.compliance.risk_rating;
+  $("asOfNote").textContent = "As of " + AS_OF;
+
+  const flagItems = flags.map((c) => `<li class="${flagMeta[c].queue === "CREDIT" ? "credit" : ""}"><code>${c}</code><span>${esc(flagMeta[c].note)}</span></li>`);
+  const tagItems = tags.map((c) => `<li class="tag"><code>${c}</code><span>${esc(tagMeta[c].note)}</span></li>`);
+  $("flags").innerHTML = [...flagItems, ...tagItems].join("") ||
+    `<li class="clear"><span>No flags raised. Eligible for straight-through approval once the checklist is complete.</span></li>`;
+
+  $("checklist").innerHTML = checklist(payload, errors)
+    .map(([label, done]) => `<li class="${done ? "done" : "todo"}"><span class="mk">${done ? "✓" : "·"}</span><span>${esc(label)}</span></li>`).join("");
+
+  $("hooks").innerHTML = webhooks.map((h) => `<tr><td>${h.target.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace("Kyc Aml", "KYC / AML").replace("Crm", "CRM")}</td><td><span class="prio ${h.priority}">${h.priority}</span></td></tr>`).join("");
+  $("payload").innerHTML = highlightJson(payload);
+  return { payload, errors };
+}
+
+const queue = [];
+function renderQueue() {
+  $("queueCount").textContent = `${queue.length} file${queue.length === 1 ? "" : "s"}`;
+  if (!queue.length) return;
+  $("queue").innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Record</th><th>Entity</th><th>Annual FX</th><th>Risk</th><th>Status</th><th>Flags</th></tr></thead>
+    <tbody>${queue.slice().reverse().map(({ id, payload: p }) => `<tr>
+      <td class="mono">${id}</td><td>${esc(p.entity.legal_name)}</td>
+      <td class="mono">${fmtCad(p.relationship.estimated_annual_fx_volume_cad)}</td>
+      <td><span class="risk ${p.compliance.risk_rating}">${p.compliance.risk_rating}</span></td>
+      <td><span class="status ${p.routing.workflow_status === STATUS.BLOCKED ? "blocked" : p.routing.workflow_status === STATUS.STP ? "stp" : "pending"}">${p.routing.workflow_status}</span></td>
+      <td class="mono">${p.routing.flags.length}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+$("intake").addEventListener("input", render);
+$("intake").addEventListener("change", render);
+$("addOwner").addEventListener("click", () => { $("owners").append(ownerRow()); syncAddButton(); render(); });
+$("intake").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const { payload, errors } = render();
+  if (errors.length) {
+    $("feedback").innerHTML = `<div class="errors"><strong>Submission blocked</strong><ul>${errors.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+    return;
+  }
+  const id = "APX-" + Math.random().toString(16).slice(2, 10).toUpperCase();
+  queue.push({ id, payload: JSON.parse(JSON.stringify(payload)) });
+  renderQueue();
+  $("feedback").innerHTML = `<p class="success">${esc(payload.entity.legal_name)} logged as ${id}. ${esc(payload.routing.workflow_status)}.</p>`;
+});
+document.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => loadPreset(PRESETS[Number(b.dataset.preset)])));
+$("copyBtn").addEventListener("click", async () => {
+  const text = JSON.stringify(buildPayload(readForm(), AS_OF), null, 2);
+  try { await navigator.clipboard.writeText(text); $("copyBtn").textContent = "Copied"; }
+  catch { const r = document.createRange(); r.selectNodeContents($("payload")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("copyBtn").textContent = "Selected"; }
+  setTimeout(() => ($("copyBtn").textContent = "Copy JSON"), 1500);
+});
+
+$("srcFlags").textContent = computeFlags.toString();
+$("srcStatus").textContent = computeRiskRating.toString() + "\n\n" + resolveStatus.toString();
+
+loadPreset(PRESETS[1]);
+</script>
+
+</body>
+</html>
